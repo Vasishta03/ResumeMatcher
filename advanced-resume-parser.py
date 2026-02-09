@@ -8,7 +8,6 @@ from tkinter import filedialog
 import threading
 from rapidfuzz import fuzz
 
-# Load reference data from CSVs
 def load_reference_data():
     data = {
         'skills': [],
@@ -16,19 +15,16 @@ def load_reference_data():
         'education_degrees': []
     }
     
-    # Load skills
     if os.path.exists('skills.csv'):
         with open('skills.csv', 'r') as file:
             reader = csv.DictReader(file)
             data['skills'] = [row['Skill'].lower() for row in reader]
     
-    # Load job titles
     if os.path.exists('job_titles.csv'):
         with open('job_titles.csv', 'r') as file:
             reader = csv.DictReader(file)
             data['job_titles'] = [row['Title'].lower() for row in reader]
     
-    # Load education degrees
     if os.path.exists('education_degrees.csv'):
         with open('education_degrees.csv', 'r') as file:
             reader = csv.DictReader(file)
@@ -36,7 +32,6 @@ def load_reference_data():
     
     return data
 
-# Parse resume text from PDF
 def extract_text_from_pdf(file_path):
     text = ""
     try:
@@ -49,7 +44,6 @@ def extract_text_from_pdf(file_path):
         print(f"Error extracting text from PDF: {e}")
     return text
 
-# Extract information using regex and reference data
 def parse_resume(file_path, reference_data):
     result = {
         'name': None,
@@ -62,21 +56,17 @@ def parse_resume(file_path, reference_data):
         'file_path': file_path
     }
     
-    # Extract text from PDF
     text = extract_text_from_pdf(file_path)
     if not text:
         return result
     
-    # Store raw text
     result['raw_text'] = text
     
-    # Extract email using robust regex pattern
     email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
     emails = re.findall(email_pattern, text)
     if emails:
         result['email'] = emails[0]
     
-    # Extract phone using multiple patterns for different formats
     phone_patterns = [
         r'(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',  # (123) 456-7890
         r'(?:\+?\d{1,3}[-.\s]?)?\d{3}[-.\s]?\d{3}[-.\s]?\d{4}',  # 123 456 7890
@@ -89,14 +79,11 @@ def parse_resume(file_path, reference_data):
             result['phone'] = phones[0]
             break
     
-    # Extract name - look at beginning of resume
     lines = text.split('\n')
     for i in range(min(5, len(lines))):
         line = lines[i].strip()
-        # Skip lines with email, phone, or address
         if '@' in line or re.search(r'\d{3}', line) or 'address' in line.lower():
             continue
-        # Check if line is potential name (1-3 words, each capitalized)
         words = line.split()
         if 1 <= len(words) <= 3:
             capitalized_words = [w for w in words if len(w) > 1 and w[0].isupper()]
@@ -104,11 +91,9 @@ def parse_resume(file_path, reference_data):
                 result['name'] = line
                 break
     
-    # Extract skills - comprehensive matching
     skills_found = set()
     text_lower = text.lower()
     
-    # First, look for a dedicated skills section
     skills_section = None
     skills_headers = ['skills', 'technical skills', 'expertise', 'competencies', 'proficiencies', 'technologies']
     
@@ -117,7 +102,6 @@ def parse_resume(file_path, reference_data):
         match = header_pattern.search(text)
         
         if match:
-            # Find text between this header and next header
             start_pos = match.end()
             next_header_pattern = re.compile(r"\n\s*[A-Z][A-Za-z\s]+:?(?:\n|\s|$)")
             next_match = next_header_pattern.search(text, start_pos)
@@ -125,44 +109,36 @@ def parse_resume(file_path, reference_data):
             if next_match:
                 skills_section = text[start_pos:next_match.start()]
             else:
-                skills_section = text[start_pos:start_pos+500]  # Limit to 500 chars
+                skills_section = text[start_pos:start_pos+500]  
             break
     
-    # Extract skills from the skills section if found
     if skills_section:
-        # Split by common separators
         section_split = re.split(r'[,•\n•|/]', skills_section)
         section_items = [item.strip() for item in section_split if item.strip()]
         
         for item in section_items:
             item_lower = item.lower()
-            # Check against reference skills
             for skill in reference_data['skills']:
                 if skill in item_lower:
                     skills_found.add(skill.capitalize())
     
-    # Look for skills throughout the document
     for skill in reference_data['skills']:
         if skill.lower() in text_lower:
             skills_found.add(skill.capitalize())
     
     result['skills'] = sorted(list(skills_found))
     
-    # Extract education - look for degree mentions
     education_found = []
     
     for degree in reference_data['education_degrees']:
         if degree.lower() in text_lower:
-            # Find the context around this degree
             degree_pattern = re.compile(f"{re.escape(degree)}\\b", re.IGNORECASE)
             match = degree_pattern.search(text)
             if match:
-                # Extract context around the degree
                 start = max(0, match.start() - 100)
                 end = min(len(text), match.end() + 100)
                 context = text[start:end].strip()
                 
-                # university/institution name
                 university_patterns = ['university', 'college', 'institute', 'school']
                 university = None
                 
@@ -173,14 +149,12 @@ def parse_resume(file_path, reference_data):
                         break
                 
                 if not university:
-                    # Word starting with capital followed by University
                     for uni_pattern in university_patterns:
                         uni_match = re.search(f"\\b[A-Z][a-zA-Z\\s]+\\s+{uni_pattern}\\b", context, re.IGNORECASE)
                         if uni_match:
                             university = uni_match.group(0)
                             break
                 
-                # Look for graduation year
                 year_match = re.search(r'\b(19|20)\d{2}\b', context)
                 year = year_match.group(0) if year_match else None
                 
@@ -192,8 +166,6 @@ def parse_resume(file_path, reference_data):
                 })
     
     result['education'] = education_found
-    
-    # Extract work experience - look for job titles
     jobs_found = []
     
     for title in reference_data['job_titles']:
@@ -205,11 +177,9 @@ def parse_resume(file_path, reference_data):
                 end = min(len(text), match.end() + 150)
                 context = text[start:end].strip()
                 
-                # Look for company name and dates
                 company = None
                 date = None
                 
-                # Check for date patterns in context
                 date_patterns = [
                     r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}\s+[-–—]\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{4}|Present',
                     r'\d{4}\s+[-–—]\s+\d{4}',
@@ -222,7 +192,6 @@ def parse_resume(file_path, reference_data):
                         date = date_match.group(0)
                         break
                 
-                # Look for possible company name
                 company_indicators = ['at', 'with', 'for', '-', '|', ',']
                 for indicator in company_indicators:
                     company_pattern = f"{re.escape(title)}\\s*{re.escape(indicator)}\\s*([A-Z][A-Za-z0-9\\s&.,]+)"
@@ -232,7 +201,6 @@ def parse_resume(file_path, reference_data):
                         break
                 
                 if not company:
-                    # Company followed by job title
                     for indicator in company_indicators:
                         company_pattern = f"([A-Z][A-Za-z0-9\\s&.,]+)\\s*{re.escape(indicator)}\\s*{re.escape(title)}"
                         company_match = re.search(company_pattern, context, re.IGNORECASE)
@@ -240,7 +208,6 @@ def parse_resume(file_path, reference_data):
                             company = company_match.group(1).strip()
                             break
                 
-                # responsibilities/achievements (bullet points)
                 responsibilities = []
                 bullet_pattern = r'[•\-\*]\s*([^\n•\-\*]+)'
                 bullet_matches = re.findall(bullet_pattern, context)
@@ -250,13 +217,11 @@ def parse_resume(file_path, reference_data):
                     'title': title,
                     'company': company if company else "Company name not found",
                     'date': date if date else "Date not found",
-                    'responsibilities': responsibilities[:3],  # Keep only first 3 responsibilities
+                    'responsibilities': responsibilities[:3],  
                     'context': context
                 })
     
     result['jobs'] = jobs_found
-    
-    # Extract projects - look for project indicators
     projects_found = []
     project_headers = ['projects', 'key projects', 'professional projects', 'portfolio', 'project work']
     
@@ -265,7 +230,6 @@ def parse_resume(file_path, reference_data):
         match = header_pattern.search(text)
         
         if match:
-            # Find text btw this header and next header
             start_pos = match.end()
             next_header_pattern = re.compile(r"\n\s*[A-Z][A-Za-z\s]+:?(?:\n|\s|$)")
             next_match = next_header_pattern.search(text, start_pos)
@@ -273,9 +237,8 @@ def parse_resume(file_path, reference_data):
             if next_match:
                 projects_section = text[start_pos:next_match.start()]
             else:
-                projects_section = text[start_pos:start_pos+800]  # Limit to 800 chars
+                projects_section = text[start_pos:start_pos+800]  
             
-            # Split the projects section and process
             lines = projects_section.split('\n')
             current_project = None
             
@@ -284,7 +247,6 @@ def parse_resume(file_path, reference_data):
                 if not line:
                     continue
                 
-                # Check if this is a new project (often starts with a title)
                 if not line.startswith('•') and not line.startswith('-') and len(line) < 100:
                     if current_project:
                         projects_found.append(current_project)
@@ -294,16 +256,11 @@ def parse_resume(file_path, reference_data):
                         'description': []
                     }
                 elif current_project:
-                    # This line is part of the current project description
                     current_project['description'].append(line)
             
-            # Add the last project
             if current_project:
                 projects_found.append(current_project)
-            
             break
-    
-    # Limit project descriptions to 3 lines each
     for project in projects_found:
         if 'description' in project:
             project['description'] = project['description'][:3]
@@ -312,46 +269,35 @@ def parse_resume(file_path, reference_data):
     
     return result
 
-# Define the main application class
 class ResumeParserApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         
-        # Configure window
         self.title("Advanced Resume Matcher")
         self.geometry("1200x800")
         
-        # Set appearance mode and color theme
         ctk.set_appearance_mode("Dark")
         ctk.set_default_color_theme("blue")
         
-        # Configure grid layout
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
         
-        # Initialize data
         self.resumes = []
         self.reference_data = load_reference_data()
         self.json_path = os.path.join(os.getcwd(), "parsed_resumes.json")
         
-        # Create sidebar
         self.create_sidebar()
         
-        # Create main content area
         self.create_main_content()
         
-        # Load existing data if available
         self.load_existing_data()
         
-        # Status variables
         self.parsing_in_progress = False
     
     def create_sidebar(self):
-        # Create sidebar frame
         self.sidebar = ctk.CTkFrame(self, width=280)
         self.sidebar.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         
-        # App title
         self.logo_label = ctk.CTkLabel(
             self.sidebar, 
             text="Resume Matcher Pro",
@@ -366,25 +312,22 @@ class ResumeParserApp(ctk.CTk):
         )
         self.subtitle_label.pack(pady=(0, 20))
         
-        # Add file button
         self.btn_add_file = ctk.CTkButton(
             self.sidebar,
-            text="📄 Add Resume File",
+            text="Add Resume File",
             command=self.select_file,
             height=40
         )
         self.btn_add_file.pack(pady=10, padx=20, fill="x")
         
-        # Add folder button
         self.btn_add_folder = ctk.CTkButton(
             self.sidebar,
-            text="📁 Add Resume Folder",
+            text="Add Resume Folder",
             command=self.select_folder,
             height=40
         )
         self.btn_add_folder.pack(pady=10, padx=20, fill="x")
         
-        # Clear all button
         self.btn_clear = ctk.CTkButton(
             self.sidebar,
             text="🗑️ Clear All",
@@ -394,7 +337,6 @@ class ResumeParserApp(ctk.CTk):
         )
         self.btn_clear.pack(pady=10, padx=20, fill="x")
         
-        # Search entry
         self.search_label = ctk.CTkLabel(
             self.sidebar,
             text="Search Resumes:",
@@ -411,7 +353,6 @@ class ResumeParserApp(ctk.CTk):
         self.search_entry.pack(pady=10, padx=20, fill="x")
         self.search_entry.bind("<KeyRelease>", self.perform_search)
         
-        # Quick filter buttons
         self.filter_label = ctk.CTkLabel(
             self.sidebar,
             text="Quick Filters:",
@@ -444,11 +385,9 @@ class ResumeParserApp(ctk.CTk):
         )
         self.btn_filter_manager.pack(pady=2, padx=20, fill="x")
         
-        # Status frame
         self.status_frame = ctk.CTkFrame(self.sidebar)
         self.status_frame.pack(pady=(20, 10), padx=20, fill="x")
         
-        # Status label
         self.status_label = ctk.CTkLabel(
             self.status_frame,
             text="Ready",
@@ -456,7 +395,6 @@ class ResumeParserApp(ctk.CTk):
         )
         self.status_label.pack(pady=10, padx=10, fill="x")
         
-        # Count label
         self.count_label = ctk.CTkLabel(
             self.status_frame,
             text="Resumes: 0",
@@ -466,11 +404,9 @@ class ResumeParserApp(ctk.CTk):
         self.count_label.pack(pady=(0, 10), padx=10, fill="x")
     
     def create_main_content(self):
-        # Create scrollable frame for content
         self.content = ctk.CTkScrollableFrame(self)
         self.content.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
         
-        # Welcome message
         self.welcome_label = ctk.CTkLabel(
             self.content,
             text="Welcome to Advanced Resume Matcher!",
@@ -485,7 +421,6 @@ class ResumeParserApp(ctk.CTk):
         )
         self.instruction_label.pack(pady=10)
         
-        # Features list
         features_frame = ctk.CTkFrame(self.content)
         features_frame.pack(pady=20, padx=20, fill="x")
         
@@ -521,13 +456,11 @@ class ResumeParserApp(ctk.CTk):
         self.perform_search()
     
     def clear_all(self):
-        # Clear all resumes
         self.resumes = []
         self.save_to_json()
         self.count_label.configure(text="Resumes: 0")
         self.status_label.configure(text="All resumes cleared")
         
-        # Clear display
         for widget in self.content.winfo_children():
             widget.destroy()
         self.create_main_content()
@@ -557,15 +490,12 @@ class ResumeParserApp(ctk.CTk):
         self.status_label.configure(text=f"Parsing {os.path.basename(file_path)}...")
         self.update_idletasks()
         
-        # Start parsing in a separate thread
         threading.Thread(target=self._parse_file_thread, args=(file_path,)).start()
     
     def _parse_file_thread(self, file_path):
         try:
-            # Parse the file
             result = parse_resume(file_path, self.reference_data)
             
-            # Add to resumes list if not already present
             file_exists = False
             for resume in self.resumes:
                 if resume['file_path'] == file_path:
@@ -575,14 +505,11 @@ class ResumeParserApp(ctk.CTk):
             if not file_exists:
                 self.resumes.append(result)
                 
-                # Save to JSON
                 self.save_to_json()
                 
-                # Update status and counts
                 self.status_label.configure(text=f"Successfully parsed {os.path.basename(file_path)}")
                 self.count_label.configure(text=f"Resumes: {len(self.resumes)}")
                 
-                # Refresh display
                 self.display_results([result])
         except Exception as e:
             self.status_label.configure(text=f"Error: {str(e)}")
@@ -592,7 +519,6 @@ class ResumeParserApp(ctk.CTk):
     def process_folder(self, folder_path):
         self.parsing_in_progress = True
         
-        # Find PDF files in the folder
         pdf_files = []
         for filename in os.listdir(folder_path):
             if filename.lower().endswith('.pdf'):
@@ -606,21 +532,17 @@ class ResumeParserApp(ctk.CTk):
         self.status_label.configure(text=f"Found {len(pdf_files)} PDF files. Processing...")
         self.update_idletasks()
         
-        # Start parsing in a separate thread
         threading.Thread(target=self._parse_folder_thread, args=(pdf_files,)).start()
     
     def _parse_folder_thread(self, pdf_files):
         try:
             results = []
             for i, file_path in enumerate(pdf_files):
-                # Update status for each file
                 self.status_label.configure(text=f"Parsing file {i+1}/{len(pdf_files)}: {os.path.basename(file_path)}")
                 self.update_idletasks()
                 
-                # Parse the file
                 result = parse_resume(file_path, self.reference_data)
                 
-                # Add to resumes list if not already present
                 file_exists = False
                 for resume in self.resumes:
                     if resume['file_path'] == file_path:
@@ -631,14 +553,10 @@ class ResumeParserApp(ctk.CTk):
                     self.resumes.append(result)
                     results.append(result)
             
-            # Save to JSON
             self.save_to_json()
-            
-            # Update status and counts
             self.status_label.configure(text=f"Successfully parsed {len(results)} new resumes")
             self.count_label.configure(text=f"Resumes: {len(self.resumes)}")
             
-            # Refresh display
             self.display_results(results)
         except Exception as e:
             self.status_label.configure(text=f"Error: {str(e)}")
@@ -648,10 +566,8 @@ class ResumeParserApp(ctk.CTk):
     def save_to_json(self):
         try:
             with open(self.json_path, 'w') as f:
-                # Create a simplified version for storage
                 simplified_resumes = []
                 for resume in self.resumes:
-                    # Don't store raw text in the JSON file
                     resume_copy = resume.copy()
                     if 'raw_text' in resume_copy:
                         del resume_copy['raw_text']
@@ -676,16 +592,13 @@ class ResumeParserApp(ctk.CTk):
         query = self.search_entry.get().lower().strip()
         
         if not query:
-            # Clear results if search is empty
             for widget in self.content.winfo_children():
                 widget.destroy()
             self.create_main_content()
             return
         
-        # Find matching resumes
         results = []
         for resume in self.resumes:
-            # Create searchable text from resume data
             search_text = ""
             if resume.get('name'):
                 search_text += resume['name'] + " "
@@ -698,20 +611,18 @@ class ResumeParserApp(ctk.CTk):
             for job in resume.get('jobs', []):
                 if isinstance(job, dict):
                     for key, value in job.items():
-                        if key != 'context' and value:  # Skip context field
+                        if key != 'context' and value:  
                             if isinstance(value, list):
                                 search_text += " ".join(value) + " "
                             else:
                                 search_text += str(value) + " "
-            
-            # Add education information
+        
             for edu in resume.get('education', []):
                 if isinstance(edu, dict):
                     for key, value in edu.items():
                         if key != 'context' and value:
                             search_text += str(value) + " "
             
-            # Add project information
             for project in resume.get('projects', []):
                 if isinstance(project, dict):
                     for key, value in project.items():
@@ -720,33 +631,26 @@ class ResumeParserApp(ctk.CTk):
                                 search_text += " ".join(value) + " "
                             else:
                                 search_text += str(value) + " "
-            
-            # Calculate match score
+
             search_text = search_text.lower()
             
-            # Direct match gets highest score
             if query in search_text:
                 score = 100
             else:
-                # Fuzzy match for partial matches
                 score = fuzz.partial_ratio(query, search_text)
             
-            if score > 60:  # Threshold for including in results
+            if score > 60:  
                 results.append((score, resume))
         
-        # Sort by score (highest first)
         results.sort(reverse=True, key=lambda x: x[0])
         
-        # Display results
         self.display_results([r[1] for r in results])
     
     def display_results(self, results):
-        # Clear previous results
         for widget in self.content.winfo_children():
             widget.destroy()
         
         if not results:
-            # Show no results message
             no_results_label = ctk.CTkLabel(
                 self.content,
                 text="No matching resumes found",
@@ -755,7 +659,6 @@ class ResumeParserApp(ctk.CTk):
             no_results_label.pack(pady=20)
             return
         
-        # Show results count
         results_count_label = ctk.CTkLabel(
             self.content,
             text=f"Found {len(results)} matching resume(s)",
@@ -763,20 +666,16 @@ class ResumeParserApp(ctk.CTk):
         )
         results_count_label.pack(pady=10)
         
-        # Display each result
         for resume in results:
             self.create_result_card(resume)
     
     def create_result_card(self, resume):
-        # Create a card for the resume
         card = ctk.CTkFrame(self.content)
         card.pack(fill="x", pady=10, padx=10)
         
-        # Header with name and contact info
         header = ctk.CTkFrame(card, fg_color=("#3B8ED0", "#1F6AA5"))
         header.pack(fill="x", padx=15, pady=(15, 10))
         
-        # Name (if available)
         if resume.get('name'):
             name_label = ctk.CTkLabel(
                 header,
@@ -794,12 +693,11 @@ class ResumeParserApp(ctk.CTk):
             )
             name_label.pack(anchor="w", padx=10, pady=(10, 5))
         
-        # Contact info (if available)
         contact_info = []
         if resume.get('email'):
-            contact_info.append(f"📧 {resume['email']}")
+            contact_info.append(f"{resume['email']}")
         if resume.get('phone'):
-            contact_info.append(f"📞 {resume['phone']}")
+            contact_info.append(f"{resume['phone']}")
         
         if contact_info:
             contact_label = ctk.CTkLabel(
@@ -810,28 +708,24 @@ class ResumeParserApp(ctk.CTk):
             )
             contact_label.pack(anchor="w", padx=10, pady=(0, 10))
         
-        # Skills section
         if resume.get('skills'):
             skills_frame = ctk.CTkFrame(card, fg_color="transparent")
             skills_frame.pack(fill="x", padx=15, pady=5)
             
             skills_header = ctk.CTkLabel(
                 skills_frame,
-                text="💼 Skills:",
+                text="Skills:",
                 font=ctk.CTkFont(size=14, weight="bold")
             )
             skills_header.pack(anchor="w")
             
-            # Create a frame for skill chips
             skills_chips = ctk.CTkFrame(skills_frame, fg_color="transparent")
             skills_chips.pack(fill="x", pady=5)
             
-            # Add skill chips
             row_frame = ctk.CTkFrame(skills_chips, fg_color="transparent")
             row_frame.pack(fill="x", pady=2)
             
-            for i, skill in enumerate(resume['skills'][:15]):  # Limit to 15 skills
-                # Create a new row every 5 skills
+            for i, skill in enumerate(resume['skills'][:15]): 
                 if i > 0 and i % 5 == 0:
                     row_frame = ctk.CTkFrame(skills_chips, fg_color="transparent")
                     row_frame.pack(fill="x", pady=2)
@@ -846,7 +740,6 @@ class ResumeParserApp(ctk.CTk):
                 )
                 skill_chip.pack(side="left", padx=3)
             
-            # Show more skills count if there are many
             if len(resume['skills']) > 15:
                 more_skills_label = ctk.CTkLabel(
                     skills_chips,
@@ -855,24 +748,21 @@ class ResumeParserApp(ctk.CTk):
                 )
                 more_skills_label.pack(anchor="w", pady=5)
         
-        # Work exp section
         if resume.get('jobs'):
             jobs_frame = ctk.CTkFrame(card, fg_color="transparent")
             jobs_frame.pack(fill="x", padx=15, pady=5)
             
             jobs_header = ctk.CTkLabel(
                 jobs_frame,
-                text="💼 Work Experience:",
+                text="Work Experience:",
                 font=ctk.CTkFont(size=14, weight="bold")
             )
             jobs_header.pack(anchor="w")
             
-            # Add job details 
             for job in resume['jobs'][:3]:
                 job_frame = ctk.CTkFrame(jobs_frame, fg_color=("#F0F0F0", "#2B2B2B"))
                 job_frame.pack(fill="x", pady=5)
                 
-                # Job title
                 if 'title' in job:
                     title_label = ctk.CTkLabel(
                         job_frame,
@@ -881,7 +771,6 @@ class ResumeParserApp(ctk.CTk):
                     )
                     title_label.pack(anchor="w", padx=10, pady=(10, 2))
                 
-                # Company and date
                 company_date = []
                 if 'company' in job and job['company'] != "Company name not found":
                     company_date.append(job['company'])
@@ -896,9 +785,8 @@ class ResumeParserApp(ctk.CTk):
                     )
                     company_label.pack(anchor="w", padx=10, pady=(0, 5))
                 
-                # Responsibilities
                 if 'responsibilities' in job and job['responsibilities']:
-                    for resp in job['responsibilities'][:2]:  # Show only first 2 responsibilities
+                    for resp in job['responsibilities'][:2]:  
                         resp_label = ctk.CTkLabel(
                             job_frame,
                             text=f"• {resp}",
@@ -907,10 +795,8 @@ class ResumeParserApp(ctk.CTk):
                         )
                         resp_label.pack(anchor="w", padx=20, pady=1)
                 
-                # Add padding at bottom
                 ctk.CTkLabel(job_frame, text="", height=5).pack()
             
-            # Show count if there are more jobs
             if len(resume['jobs']) > 3:
                 more_jobs_label = ctk.CTkLabel(
                     jobs_frame,
@@ -919,24 +805,21 @@ class ResumeParserApp(ctk.CTk):
                 )
                 more_jobs_label.pack(anchor="w", pady=5)
         
-        # Education section
         if resume.get('education'):
             education_frame = ctk.CTkFrame(card, fg_color="transparent")
             education_frame.pack(fill="x", padx=15, pady=5)
             
             education_header = ctk.CTkLabel(
                 education_frame,
-                text="🎓 Education:",
+                text="Education:",
                 font=ctk.CTkFont(size=14, weight="bold")
             )
             education_header.pack(anchor="w")
             
-            # Add education details
-            for edu in resume['education'][:2]:  # Limit to 2 education entries
+            for edu in resume['education'][:2]: 
                 edu_frame = ctk.CTkFrame(education_frame, fg_color=("#F0F0F0", "#2B2B2B"))
                 edu_frame.pack(fill="x", pady=5)
                 
-                # Degree
                 if 'degree' in edu:
                     degree_label = ctk.CTkLabel(
                         edu_frame,
@@ -945,7 +828,6 @@ class ResumeParserApp(ctk.CTk):
                     )
                     degree_label.pack(anchor="w", padx=10, pady=(10, 2))
                 
-                # Institution and year
                 inst_year = []
                 if 'institution' in edu and edu['institution'] != "Institution name not found":
                     inst_year.append(edu['institution'])
@@ -960,24 +842,21 @@ class ResumeParserApp(ctk.CTk):
                     )
                     institution_label.pack(anchor="w", padx=10, pady=(0, 10))
         
-        # Projects section
         if resume.get('projects'):
             projects_frame = ctk.CTkFrame(card, fg_color="transparent")
             projects_frame.pack(fill="x", padx=15, pady=5)
             
             projects_header = ctk.CTkLabel(
                 projects_frame,
-                text="🚀 Projects:",
+                text="Projects:",
                 font=ctk.CTkFont(size=14, weight="bold")
             )
             projects_header.pack(anchor="w")
-            
-            # Add project details
-            for project in resume['projects'][:2]:  # Limit to 2 projects
+        
+            for project in resume['projects'][:2]: 
                 project_frame = ctk.CTkFrame(projects_frame, fg_color=("#F0F0F0", "#2B2B2B"))
                 project_frame.pack(fill="x", pady=5)
                 
-                # Project title
                 if 'title' in project:
                     title_label = ctk.CTkLabel(
                         project_frame,
@@ -986,9 +865,8 @@ class ResumeParserApp(ctk.CTk):
                     )
                     title_label.pack(anchor="w", padx=10, pady=(10, 5))
                 
-                # Description
                 if 'description' in project and project['description']:
-                    for desc in project['description'][:1]:  # Show only first description line
+                    for desc in project['description'][:1]: 
                         desc_label = ctk.CTkLabel(
                             project_frame,
                             text=f"• {desc}",
@@ -997,10 +875,8 @@ class ResumeParserApp(ctk.CTk):
                         )
                         desc_label.pack(anchor="w", padx=20, pady=1)
                 
-                # Add padding at bottom
                 ctk.CTkLabel(project_frame, text="", height=5).pack()
             
-            # Show count if there are more projects
             if len(resume['projects']) > 2:
                 more_projects_label = ctk.CTkLabel(
                     projects_frame,
@@ -1009,25 +885,21 @@ class ResumeParserApp(ctk.CTk):
                 )
                 more_projects_label.pack(anchor="w", pady=5)
         
-        # File path at the bottom
         footer = ctk.CTkFrame(card, fg_color="transparent")
         footer.pack(fill="x", padx=15, pady=(5, 10))
         
         file_label = ctk.CTkLabel(
             footer,
-            text=f"📁 File: {os.path.basename(resume['file_path'])}",
+            text=f"File: {os.path.basename(resume['file_path'])}",
             font=ctk.CTkFont(size=10),
             text_color="gray"
         )
         file_label.pack(anchor="w")
 
-# Main execution
 if __name__ == "__main__":
-    # First, create the reference data files if they don't exist
     if not os.path.exists('skills.csv') or not os.path.exists('job_titles.csv') or not os.path.exists('education_degrees.csv'):
         print("Creating reference data files...")
         
-        # Create skills CSV
         skills = [
             # Programming Languages
             "Python", "Java", "C++", "C#", "JavaScript", "TypeScript", "PHP", "Ruby", "Go", "Swift",
@@ -1058,7 +930,6 @@ if __name__ == "__main__":
             for skill in skills:
                 writer.writerow([skill])
         
-        # Create job titles CSV
         job_titles = [
             "Software Engineer", "Senior Software Engineer", "Software Developer", "Full Stack Developer", "Frontend Developer", 
             "Backend Developer", "Mobile Developer", "iOS Developer", "Android Developer", "Web Developer",
@@ -1076,7 +947,6 @@ if __name__ == "__main__":
             for title in job_titles:
                 writer.writerow([title])
         
-        # Create education degrees CSV
         degrees = [
             "Bachelor of Science (BS)", "Bachelor of Arts (BA)", "Bachelor of Engineering (BE)", 
             "Bachelor of Technology (BTech)", "Bachelor of Computer Science", "Bachelor of Computer Applications (BCA)",
@@ -1094,6 +964,5 @@ if __name__ == "__main__":
         
         print("Reference data files created successfully!")
     
-    # Create and run the application
     app = ResumeParserApp()
     app.mainloop()
